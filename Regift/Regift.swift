@@ -155,7 +155,7 @@ public struct Regift {
 
     /// The destination path for the generated file.
     private var destinationFileURL: NSURL?
-    
+
     /**
         Create a GIF from a movie stored at the given URL. This converts the whole video to a GIF meeting the requested output parameters.
 
@@ -218,7 +218,7 @@ public struct Regift {
             kCGImagePropertyGIFLoopCount as String: NSNumber(int: Int32(loopCount))],
             kCGImagePropertyGIFHasGlobalColorMap as String: NSValue(nonretainedObject: true)
         ]
-        
+
         let frameProperties = [
             kCGImagePropertyGIFDictionary as String:[
                 kCGImagePropertyGIFDelayTime as String:delayTime
@@ -227,20 +227,20 @@ public struct Regift {
 
         // How far along the video track we want to move, in seconds.
         let increment = Float(duration) / Float(frameCount)
-        
+
         // Add each of the frames to the buffer
         var timePoints: [TimePoint] = []
-        
+
         for frameNumber in 0 ..< frameCount {
             let seconds: Float64 = Float64(startTime) + (Float64(increment) * Float64(frameNumber))
             let time = CMTimeMakeWithSeconds(seconds, Constants.TimeInterval)
-            
+
             timePoints.append(time)
         }
-        
+
         do {
             return try createGIFForTimePoints(timePoints, fileProperties: fileProperties, frameProperties: frameProperties, frameCount: frameCount)
-            
+
         } catch {
             return nil
         }
@@ -248,7 +248,7 @@ public struct Regift {
 
     /**
         Create a GIF using the given time points in a movie file stored in this Regift's `asset`.
-    
+
         - parameters:
             - timePoints: timePoints An array of `TimePoint`s (which are typealiased `CMTime`s) to use as the frames in the GIF.
             - fileProperties: The desired attributes of the resulting GIF.
@@ -263,24 +263,24 @@ public struct Regift {
             throw RegiftError.SourceFormatInvalid
         }
 
-        var fileURL:NSURL?
+        var fileURL: NSURL?
         if self.destinationFileURL != nil {
             fileURL = self.destinationFileURL
         } else {
             let temporaryFile = (NSTemporaryDirectory() as NSString).stringByAppendingPathComponent(Constants.FileName)
             fileURL = NSURL(fileURLWithPath: temporaryFile)
         }
-        
+
         guard let destination = CGImageDestinationCreateWithURL(fileURL!, kUTTypeGIF, frameCount, nil) else {
             throw RegiftError.DestinationNotFound
         }
-        
+
         CGImageDestinationSetProperties(destination, fileProperties as CFDictionaryRef)
-        
+
         let generator = AVAssetImageGenerator(asset: asset)
-        
+
         generator.appliesPreferredTrackTransform = true
-        
+
         let tolerance = CMTimeMakeWithSeconds(Constants.Tolerance, Constants.TimeInterval)
         generator.requestedTimeToleranceBefore = tolerance
         generator.requestedTimeToleranceAfter = tolerance
@@ -297,17 +297,14 @@ public struct Regift {
         gifGroup.enter()
 
         generator.generateCGImagesAsynchronouslyForTimes(times, completionHandler: { (requestedTime, image, actualTime, result, error) in
-            guard let imageRef = image where error == nil else {
+            if let imageRef = image where error == nil {
+                CGImageDestinationAddImage(destination, imageRef, frameProperties as CFDictionaryRef)
+
+                if requestedTime == times.last?.CMTimeValue {
+                    gifGroup.leave()
+                }
+            } else {
                 print("An error occurred: \(error), image is \(image)")
-                dispatchError = true
-                gifGroup.leave()
-                return
-            }
-
-            CGImageDestinationAddImage(destination, imageRef, frameProperties as CFDictionaryRef)
-
-            if requestedTime == times.last?.CMTimeValue {
-                gifGroup.leave()
             }
         })
 
@@ -318,14 +315,14 @@ public struct Regift {
         if dispatchError {
             throw RegiftError.AddFrameToDestination
         }
-        
+
         CGImageDestinationSetProperties(destination, fileProperties as CFDictionaryRef)
-        
+
         // Finalize the gif
         if !CGImageDestinationFinalize(destination) {
             throw RegiftError.DestinationFinalize
         }
-        
+
         return fileURL!
     }
 }
